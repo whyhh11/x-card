@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f7f9fa">
+<title>推文卡片生成器</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:#f7f9fa}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:calc(74px + env(safe-area-inset-bottom));
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .bar{
+    position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;
+    padding:9px 13px;background:rgba(247,249,250,.94);
+    backdrop-filter:saturate(180%) blur(16px);-webkit-backdrop-filter:saturate(180%) blur(16px);
+    border-bottom:1px solid rgba(15,20,25,.06);
+  }
+  .bar .ttl{font-size:14.5px;font-weight:700;margin:0;letter-spacing:-.1px;display:flex;align-items:center;gap:7px}
+  .bar .ttl b{font-weight:700}
+  .bar .ttl i{font-style:normal;font-size:11px;color:#93a1af;font-weight:400}
+  .tools{display:flex;gap:6px}
+  .tbtn{
+    border:0;background:#eaeef2;color:#0f1419;font-family:inherit;font-size:12px;font-weight:600;
+    padding:6px 10px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:4px;
+  }
+  .tbtn:active{background:#dee5ec}
+  .tbtn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---------- 卡区 ---------- */
+  .stagebox{padding:10px 6px 14px;display:flex;justify-content:center;align-items:flex-start;overflow:hidden}
+
+  .hintbox{
+    margin:4px 14px 0;padding:13px 14px;background:#fff;border-radius:12px;
+    border:1px solid rgba(15,20,25,.06);font-size:12.5px;line-height:1.65;color:#6b7a8c;
+  }
+  .hintbox p{margin:0 0 7px}
+  .hintbox p:last-child{margin-bottom:0}
+  .hintbox b{color:#0f1419;font-weight:600}
+  .scaler{transform-origin:top center;flex-shrink:0}
+
+  /* ============================================================
+     卡片本体
+     参考图 1206px 宽 ÷ 3 = 402px 逻辑宽度
+     字号 15 / 行高 22 / 头像 47.33 / 内容左边界 65.3
+     ============================================================ */
+  .xcard{
+    width:402px;background:#fff;color:#0f1419;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:22px;font-weight:400;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow:hidden;
+  }
+  .xcard *{box-sizing:border-box}
+
+  .tw{display:block;padding:8.5px 12px 0 9px;position:relative}
+  .tw::after{content:"";display:block;clear:both}
+
+  /* 头像列（绝对定位，便于连接线贯穿） */
+  .av{
+    position:absolute;left:9px;top:12.67px;
+    width:47.33px;height:47.33px;border-radius:50%;
+    overflow:hidden;background:#fff;border:1px solid #eff3f4;
+  }
+  .av img{width:100%;height:100%;object-fit:cover;display:block}
+  .av.ph{background:#f7f9fa}
+  .av.ph::before{
+    content:"";position:absolute;left:50%;top:29%;transform:translateX(-50%);
+    width:17px;height:17px;border-radius:50%;background:#cfd9de;
+  }
+  .av.ph::after{
+    content:"";position:absolute;left:50%;top:58%;transform:translateX(-50%);
+    width:31px;height:20px;border-radius:50% 50% 0 0;background:#cfd9de;
+  }
+  /* 连接线：从头像底部贯穿到下一条 */
+  .thread{
+    position:absolute;left:32.16px;width:2px;background:#cfd9de;
+    top:64px;bottom:0;
+  }
+  .tw.last .thread{display:none}
+
+  /* 内容列 */
+  .cbd{margin-left:56.3px;min-width:0}
+
+  /* 名字行 */
+  .hd{display:flex;align-items:flex-start;height:22px}
+  .who{display:flex;align-items:baseline;gap:0;min-width:0;flex:1 1 auto;overflow:hidden}
+  .nm{
+    font-weight:700;font-size:15px;line-height:22px;color:#0f1419;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    flex:0 1 auto;min-width:0;outline:none;max-width:100%;
+  }
+  .vf{
+    width:13.33px;height:13.33px;flex:0 0 auto;fill:#1d9bf0;
+    align-self:center;margin-left:3.5px;margin-right:2px;
+    display:none;position:relative;top:0;
+  }
+  .vf.on{display:inline-block}
+  .hk,.tm{
+    font-size:15px;line-height:22px;color:#536471;white-space:pre;flex:0 0 auto;outline:none;
+  }
+  .hk{margin-left:5px}
+  .tm{margin-left:1px}
+  .hdi{flex:0 0 auto;display:flex;align-items:center;gap:13px;height:22px;padding-left:8px}
+  .hdi svg{width:20px;height:20px;fill:#0f1419;display:block}
+  .hdi svg.more{fill:#536471}
+
+  /* 正文 */
+  .tx{
+    font-size:15px;line-height:21.4px;color:#0f1419;
+    white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;
+    outline:none;margin-top:2.2px;min-height:21.4px;
+  }
+
+  /* 配图 */
+  .md{margin-top:10px;border-radius:16px;overflow:hidden;border:1px solid #cfd9de;display:none}
+  .md.on{display:block}
+  .md img{width:100%;display:block}
+
+  /* 互动栏：绝对定位网格，严格复刻实测坐标 */
+  .ac{position:relative;height:18.75px;margin-top:7px;margin-bottom:14px}
+  .tw.last .ac{margin-bottom:9.8px}
+  .ic{position:absolute;top:0;height:18.75px;display:flex;align-items:center;white-space:nowrap}
+  .ic svg{width:18.75px;height:18.75px;fill:#536471;flex:0 0 auto;display:block}
+  .cn{
+    font-size:13px;line-height:18.75px;color:#536471;margin-left:5.5px;
+    outline:none;font-variant-numeric:tabular-nums;white-space:nowrap;
+    min-width:4px;display:inline-block;
+  }
+  /* 数字过长时缩小字号，保证不压到右侧书签图标 */
+  .cn.sm{font-size:11.5px}
+  .cn.xs{font-size:10.5px}
+  .cn{max-width:42px;overflow:hidden;text-overflow:ellipsis}
+
+  /* 编辑高亮 */
+  body.editing [contenteditable="true"]:focus{
+    background:#fffaea;border-radius:3px;
+    box-shadow:0 0 0 2px #ffe6a8;
+  }
+
+  /* ---------- 底栏 ---------- */
+  .dock{
+    position:fixed;left:0;right:0;bottom:0;z-index:40;
+    padding:8px 11px calc(8px + env(safe-area-inset-bottom));
+    background:rgba(255,255,255,.95);
+    backdrop-filter:saturate(180%) blur(18px);-webkit-backdrop-filter:saturate(180%) blur(18px);
+    border-top:1px solid rgba(15,20,25,.07);
+    display:flex;gap:7px;align-items:center;
+  }
+  .dock .sp{flex:1 1 auto}
+  .btn{
+    border:0;border-radius:11px;padding:11px 13px;font-size:14px;font-weight:700;font-family:inherit;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;
+    transition:transform .1s;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn svg{width:16px;height:16px;flex:0 0 auto}
+  .btn svg.st{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .btn.p{background:#0f1419;color:#fff}
+  .btn.g{background:#eaeef2;color:#0f1419;padding:11px 12px}
+  .btn.b{background:#1d9bf0;color:#fff;flex:1 1 auto}
+
+  /* ---------- 弹层 ---------- */
+  .sheet{position:fixed;inset:0;z-index:60;background:rgba(10,14,20,.55);display:none;align-items:flex-end;justify-content:center}
+  .sheet.on{display:flex}
+  .sb{
+    background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;
+    padding:14px 16px calc(15px + env(safe-area-inset-bottom));max-height:94vh;overflow:auto;
+    animation:up .24s cubic-bezier(.2,.9,.3,1);
+  }
+  @keyframes up{from{transform:translateY(22px);opacity:.55}to{transform:none;opacity:1}}
+  .sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .sh b{font-size:15.5px}
+  .sh button{border:0;background:#eef2f6;width:30px;height:30px;border-radius:50%;font-size:15px;color:#6b7a8c;padding:0;line-height:1;cursor:pointer}
+  .sb img{display:block;width:100%;height:auto;border-radius:12px;border:1px solid #eef2f6;background:#fff}
+  .imgwrap{
+    background:#f2f4f7;border-radius:12px;padding:8px;
+  }
+  .imgwrap img{border:1px solid #e6ebf0}
+  .btn.lnk{
+    margin-top:8px;width:100%;background:transparent;color:#1d9bf0;
+    font-size:12.5px;font-weight:600;padding:10px;border-radius:9px;
+  }
+  .btn.lnk:active{background:#eef5fd}
+  .tip{font-size:12.5px;color:#8b98a5;text-align:center;margin:10px 0 12px;line-height:1.55}
+  .row{display:flex;gap:8px}
+  .toast{
+    position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translate(-50%,6px);
+    background:rgba(15,20,25,.93);color:#fff;padding:8px 14px;border-radius:99px;font-size:12.5px;
+    z-index:80;opacity:0;pointer-events:none;transition:.2s;white-space:nowrap;
+  }
+  .toast.on{opacity:1;transform:translate(-50%,0)}
+  input[type=file]{display:none}
+  .settings{max-width:560px;margin:16px auto 4px;padding:16px;background:#fff;border:1px solid #e5eaf0;border-radius:16px}
+  .settings h2{margin:0 0 12px;font-size:14px;color:#0f1419}
+  .settings-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap}
+  .settings label{display:grid;gap:6px;flex:1;min-width:120px;font-size:12px;color:#536471}
+  .settings select{font:inherit;font-size:14px;color:#0f1419;background:#f7f9fa;border:1px solid #cfd9de;border-radius:9px;padding:9px;width:100%}
+  .settings p{font-size:12px;line-height:1.7;color:#536471;margin:10px 0 0}
+  .settings .status{color:#1d6da5}
+  button:disabled{opacity:.5;cursor:wait}
+  :focus-visible{outline:2px solid #1d9bf0;outline-offset:3px}
+  .hk{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .tm{flex:0 0 auto}
+  .hintbox{max-width:560px;margin:12px auto}
+  .post-tools{display:flex;justify-content:flex-end;gap:6px;margin:0 12px 10px}
+  .post-tools button{font:inherit;font-size:12px;border:0;border-radius:6px;padding:5px 8px;background:#eef2f6;color:#536471;cursor:pointer}
+  @media(max-width:590px){.settings,.hintbox{margin-left:12px;margin-right:12px}}
+  @media(max-width:360px){.bar .ttl i{display:none}}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <h1 class="ttl"><b>推文卡片</b><i>点文字直接改</i></h1>
+  <div class="tools">
+    <button class="tbtn" id="btnAdd"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>加一条</button>
+    <button class="tbtn" id="btnReset"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>重置</button>
+  </div>
+</div>
+
+<section class="settings" aria-labelledby="statsTitle">
+  <h2 id="statsTitle">互动数据</h2>
+  <div class="settings-controls">
+    <label>生成方式<select id="statsMode"><option value="manual">手动编辑</option><option value="auto">随时间随机</option></select></label>
+    <label>帖子热度<select id="statsHeat"><option value="low">日常</option><option value="medium" selected>热门</option><option value="high">爆款</option></select></label>
+    <button class="btn p" id="btnRandom">随机一组</button>
+  </div>
+  <p>支持「刚刚」「30秒」「2分钟」「3小时」「2天」或日期（2026-11-08）。同一组数据按发布时长成比例增长；重新随机可更换增长速率。数值为模拟数据。</p>
+  <p class="status" id="statsStatus" role="status">手动模式 · 可直接编辑卡片上的数字</p>
+</section>
+<div class="stagebox">
+  <div class="scaler" id="scaler">
+    <div class="xcard" id="xcard"></div>
+  </div>
+</div>
+
+<div class="hintbox">
+  <p><b>怎么用</b></p>
+  <p>卡片上<b>点任意文字</b>就能直接改：名字、@用户名、时间、正文、底部每个数字（可填 <b>8.9万</b> / <b>1.2亿</b> 这种写法）。正文里按回车换行，空一行就是分段。</p>
+  <p>选择<b>随时间随机</b>，修改时间后互动数据一起更新；直接修改数字会切回手动模式。草稿自动保存在当前浏览器。</p>
+  <p>底部三个按钮：<b>换头像</b> · <b>加配图</b>（给最后一条） · <b>蓝标</b>（开关认证）。</p>
+  <p><b>保存图片</b>：点生成后，<b>长按图片</b>存到相册。如果长按没反应，点「在浏览器中打开图片」，在新页面里长按就一定能存。</p>
+</div>
+
+<div class="dock">
+  <button class="btn g" id="btnAv" title="换头像">
+    <svg viewBox="0 0 24 24" class="st"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M5.5 18.6a7 7 0 0 1 13 0"/></svg>
+  </button>
+  <button class="btn g" id="btnMd" title="给最后一条加配图">
+    <svg viewBox="0 0 24 24" class="st"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="8.6" cy="9.6" r="1.6"/><path d="M4 17l5-4.6 3.6 3 3-2.4 4.4 4"/></svg>
+  </button>
+  <button class="btn g" id="btnVf" title="蓝标认证">
+    <svg viewBox="0 0 24 24" style="fill:currentColor"><path d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.68-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"/></svg>
+  </button>
+  <div class="sp"></div>
+  <button class="btn p" id="btnOut">
+    <svg viewBox="0 0 24 24" class="st"><path d="M12 3v12"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M4 17v3h16v-3"/></svg>生成图片
+  </button>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="sb" role="dialog" aria-modal="true" aria-label="保存图片">
+    <div class="sh"><b>保存图片</b><button id="sheetX">✕</button></div>
+    <div class="imgwrap"><img id="out" alt="生成结果"></div>
+    <p class="tip" id="outTip">长按上方图片，选择「保存到相册」</p>
+    <div class="row">
+      <button class="btn b" id="btnDl">下载 / 保存到相册</button>
+    </div>
+    <button class="btn lnk" id="btnNewTab">在浏览器中打开图片（长按更好保存）</button>
+  </div>
+</div>
+
+<input type="file" id="fAv" accept="image/*">
+<input type="file" id="fMd" accept="image/*">
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   X 官方图标路径（24×24）
+   ============================================================ */
+const P = {
+  reply:'M1.751 10c0-4.42 3.584-8 8.005-8h4.366c4.49 0 8.129 3.64 8.129 8.13 0 2.96-1.607 5.68-4.196 7.11l-8.054 4.46v-3.69h-.067c-4.49.1-8.183-3.51-8.183-8.01zm8.005-6c-3.317 0-6.005 2.69-6.005 6 0 3.37 2.77 6.08 6.138 6.01l.351-.01h1.761v2.3l5.087-2.81c1.951-1.08 3.163-3.13 3.163-5.36 0-3.39-2.744-6.13-6.129-6.13H9.756z',
+  retweet:'M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z',
+  like:'M16.697 5.5c-1.222-.06-2.679.51-3.89 2.16l-.805 1.09-.806-1.09C9.984 6.01 8.526 5.44 7.304 5.5c-1.243.07-2.349.78-2.91 1.91-.552 1.12-.633 2.78.479 4.82 1.074 1.97 3.257 4.27 7.129 6.61 3.87-2.34 6.052-4.64 7.126-6.61 1.111-2.04 1.03-3.7.477-4.82-.561-1.13-1.666-1.84-2.908-1.91zm4.187 7.69c-1.351 2.48-4.001 5.12-8.379 7.67l-.503.3-.504-.3c-4.379-2.55-7.029-5.19-8.382-7.67-1.36-2.5-1.41-4.86-.514-6.67.887-1.79 2.647-2.91 4.601-3.01 1.651-.09 3.368.56 4.798 2.01 1.429-1.45 3.146-2.1 4.796-2.01 1.954.1 3.714 1.22 4.601 3.01.896 1.81.846 4.17-.514 6.67z',
+  views:'M8.75 21V3h2v18h-2zM18 21V8.5h2V21h-2zM4 21l.004-10h2L6 21H4zm9.248 0v-7h2v7h-2z',
+  bookmark:'M4 4.5C4 3.12 5.119 2 6.5 2h11C18.881 2 20 3.12 20 4.5v18.44l-8-5.71-8 5.71V4.5zM6.5 4c-.276 0-.5.22-.5.5v14.56l6-4.29 6 4.29V4.5c0-.28-.224-.5-.5-.5h-11z',
+  share:'M12 2.59l5.7 5.7-1.41 1.42L13 6.41V16h-2V6.41l-3.3 3.3-1.41-1.42L12 2.59zM21 15l-.02 3.51c0 1.38-1.12 2.49-2.5 2.49H5.5C4.11 21 3 19.88 3 18.5V15h2v3.5c0 .28.22.5.5.5h12.98c.28 0 .5-.22.5-.5L19 15h2z',
+  xlogo:'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z',
+  blocked:'M12 2C6.49 2 2 6.49 2 12s4.49 10 10 10 10-4.49 10-10S17.51 2 12 2zm0 18c-4.41 0-8-3.59-8-8 0-1.94.7-3.72 1.86-5.12l11.26 11.26C15.72 19.3 13.94 20 12 20zm6.14-2.88L6.88 5.86C8.28 4.7 10.06 4 12 4c4.41 0 8 3.59 8 8 0 1.94-.7 3.72-1.86 5.12z',
+  more:'M3 12c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2zm7 0c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2zm7 0c0-1.1.9-2 2-2s2 .9 2 2-.9 2-2 2-2-.9-2-2z',
+  verified:'M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91c-1.31.67-2.2 1.91-2.2 3.34s.89 2.67 2.2 3.34c-.46 1.39-.21 2.9.8 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.68-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34zm-11.71 4.2L6.8 12.46l1.41-1.42 2.26 2.26 4.8-5.23 1.47 1.36-6.2 6.77z',
+};
+const ic = k => `<svg class="${k}" viewBox="0 0 24 24"><path d="${P[k]}"/></svg>`;
+
+/* ============================================================
+   默认数据
+   第一条按参考图 1 的互动量级，但四组数字都给上
+   （真实推文每一条都会有评论/转发/点赞/浏览，留空会显得不自然）
+   ============================================================ */
+const DEF = {
+  avatar: null,
+  verified: false,
+  handle: '@whyhlb',
+  tweets: [
+    { name:'胡萝卜爱加班', time:'· 2分钟', corner:'x', text:'AI时代最危险的事',
+      replies:'1', retweets:'2', likes:'18', views:'268', media:null },
+    { name:'胡萝卜爱加班', time:'· 2分钟', corner:'blocked',
+      text:'AI 最讽刺的地方是：\n\n它让一个普通人，也能轻松写出看起来很专业的东西。\n\n但它没有让我们同时拥有判断这些东西是否正确的能力。\n\n以前，我们担心自己不知道答案。\n\n现在，或许更应该担心自己太容易相信答案。',
+      replies:'127', retweets:'31', likes:'458', views:'13万', media:null },
+  ],
+};
+let data = JSON.parse(JSON.stringify(DEF));
+let stats = { mode:'manual', heat:'medium' };
+const DRAFT_KEY = 'x-card-draft-v1';
+try {
+  const saved = JSON.parse(localStorage.getItem(DRAFT_KEY));
+  if (saved && saved.data && Array.isArray(saved.data.tweets) && saved.data.tweets.length > 0 && saved.data.tweets.length <= 4) {
+    data = saved.data;
+    if (saved.stats && ['manual','auto'].includes(saved.stats.mode) && ['low','medium','high'].includes(saved.stats.heat)) stats = saved.stats;
+  }
+} catch (_) { /* 损坏或不可用的存储不影响编辑。 */ }
+let saveTimer;
+let storageWarning = false;
+function saveDraft() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify({data, stats})); }
+    catch (_) { if (!storageWarning) { storageWarning = true; toast('草稿存储空间不足或不可用，请及时导出图片'); } }
+  }, 250);
+}
+
+// 每次随机只生成速率，改时间时复用，保证时长与数值成正比。
+function ageMinutes(value, now = new Date()) {
+  const s = String(value).replace(/^[·•\s]+/, '').trim();
+  if (/^(刚刚|现在|just now|now)$/i.test(s)) return 0;
+  const m = s.match(/^(\d+(?:\.\d+)?)\s*(秒钟?|分钟?|小时|天|周|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w)(?:前|\s+ago)?$/i);
+  if (m) {
+    const unit = m[2].toLowerCase();
+    const factor = /^(秒|s)/.test(unit) ? 1/60 : /^(分|m)/.test(unit) ? 1 : /^(小|h)/.test(unit) ? 60 : /^(天|d)/.test(unit) ? 1440 : 10080;
+    return Number(m[1]) * factor;
+  }
+  const d = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if (!d) return null;
+  const date = new Date(+d[1], +d[2]-1, +d[3], +(d[4]||0), +(d[5]||0));
+  if (date.getFullYear() !== +d[1] || date.getMonth() !== +d[2]-1 || date.getDate() !== +d[3] || +(d[4]||0)>23 || +(d[5]||0)>59 || date > now) return null;
+  return (now-date)/60000;
+}
+function newRates() {
+  const reach = 35 + Math.random()*125;
+  const likes = reach*(.025 + Math.random()*.04);
+  return { views:reach, likes, replies:likes*(.04+Math.random()*.12), retweets:likes*(.06+Math.random()*.15) };
+}
+function formatCount(value) {
+  const n = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, Math.floor(value)));
+  if (n >= 1e8) return (n/1e8).toFixed(1).replace(/\.0$/, '')+'亿';
+  if (n >= 1e4) return (n/1e4).toFixed(1).replace(/\.0$/, '')+'万';
+  return String(n);
+}
+function applyStats(t, reroll = false) {
+  const minutes = ageMinutes(t.time);
+  if (minutes === null) return false;
+  if (reroll || !t.rates) t.rates = newRates();
+  const heat = {low:.12, medium:1, high:12}[stats.heat];
+  for (const key of ['replies','retweets','likes','views']) t[key] = formatCount(t.rates[key]*minutes*heat);
+  return true;
+}
+function syncStats(message) {
+  document.getElementById('statsMode').value = stats.mode;
+  document.getElementById('statsHeat').value = stats.heat;
+  document.getElementById('statsStatus').textContent = message || (stats.mode === 'auto' ? '随时间随机 · 修改时间后自动更新，点击「随机一组」换一组数据' : '手动模式 · 可直接编辑卡片上的数字');
+}
+function randomize(reroll) {
+  stats.mode = 'auto';
+  let skipped = 0;
+  data.tweets.forEach(t => { if (!applyStats(t, reroll)) skipped++; });
+  render(); saveDraft();
+  syncStats(skipped ? `${skipped} 条时间无法识别或为未来日期，保留原数据；请改为「2分钟」「3小时」或有效日期` : undefined);
+}
+document.getElementById('statsMode').onchange = e => {
+  stats.mode = e.target.value;
+  if (stats.mode === 'auto') randomize(false);
+  else { syncStats(); saveDraft(); }
+};
+document.getElementById('statsHeat').onchange = e => {
+  stats.heat = e.target.value;
+  if (stats.mode === 'auto') randomize(false);
+  else saveDraft();
+};
+document.getElementById('btnRandom').onclick = () => randomize(true);
+
+/* ============================================================
+   渲染
+   ============================================================ */
+const card = document.getElementById('xcard');
+const esc = s => String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* 互动栏实测坐标（参考图 1206px ÷ 3，相对内容列左边界 65.3） */
+const SLOT = [65.7, 133.3, 203.3, 274.3];   // 评论/转发/点赞/浏览 图标左边缘
+const BK = 343.0, SH = 376.0;               // 书签 / 分享
+const LEFT = 65.3;
+const rel = x => (x - LEFT).toFixed(2);
+
+function actHTML(t, i) {
+  const keys = ['reply','retweet','like','views'];
+  const vals = [t.replies, t.retweets, t.likes, t.views];
+  let h = '';
+  keys.forEach((k, n) => {
+    const v = vals[n] == null ? '' : String(vals[n]);
+    // 超过一定长度缩字号，避免压到右侧书签
+    const cls = v.length >= 7 ? ' xs' : v.length >= 5 ? ' sm' : '';
+    // 空值保留编辑入口，导出时再物理删除。
+    const numHTML = `<span class="cn${cls}" contenteditable="true" inputmode="decimal" aria-label="${['评论数','转发数','点赞数','浏览量'][n]}" data-f="${i}.${['replies','retweets','likes','views'][n]}">${esc(v)}</span>`;
+    h += `<div class="ic" style="left:${rel(SLOT[n])}px">${ic(k)}${numHTML}</div>`;
+  });
+  h += `<div class="ic" style="left:${rel(BK)}px">${ic('bookmark')}</div>`;
+  h += `<div class="ic" style="left:${rel(SH)}px">${ic('share')}</div>`;
+  return `<div class="ac">${h}</div>`;
+}
+
+function corner(kind) {
+  if (kind === 'x') return `<div class="hdi">${ic('xlogo')}</div>`;
+  if (kind === 'blocked') return `<div class="hdi">${ic('blocked')}<span style="display:inline-block;width:20px;height:20px">${ic('more')}</span></div>`;
+  return '<div class="hdi"></div>';
+}
+
+function render() {
+  const n = data.tweets.length;
+  card.innerHTML = data.tweets.map((t, i) => {
+    const ava = data.avatar
+      ? `<div class="av"><img src="${data.avatar}" alt=""></div>`
+      : `<div class="av ph"></div>`;
+    return `
+<article class="tw${i === n - 1 ? ' last' : ''}">
+  ${ava}
+  <div class="thread"></div>
+  <div class="cbd">
+    <div class="hd">
+      <div class="who">
+        <span class="nm" contenteditable="true" spellcheck="false" data-f="${i}.name">${esc(t.name)}</span>
+        <svg class="vf${data.verified ? ' on' : ''}" viewBox="0 0 24 24"><path d="${P.verified}"/></svg>
+        <span class="hk" contenteditable="true" spellcheck="false" data-f="handle">${esc(data.handle)}</span>
+        <span class="tm" contenteditable="true" spellcheck="false" data-f="${i}.time">${esc(t.time)}</span>
+      </div>
+      ${corner(t.corner)}
+    </div>
+    <div class="tx" contenteditable="true" spellcheck="false" data-f="${i}.text">${esc(t.text)}</div>
+    ${t.media ? `<div class="md on"><img src="${t.media}" alt=""></div>` : ''}
+    ${actHTML(t, i)}
+  </div>
+</article>`;
+  }).join('');
+  card.querySelectorAll('img').forEach(im => im.addEventListener('load', fit, {once:true}));
+  document.querySelectorAll('.post-tools').forEach(el => el.remove());
+  const tools = document.createElement('div');
+  tools.className = 'post-tools';
+  tools.innerHTML = '<button id="removeMedia">移除末条配图</button><button id="removePost">删除最后一条</button>';
+  document.querySelector('.stagebox').after(tools);
+  tools.querySelector('#removeMedia').disabled = !data.tweets[n-1].media;
+  tools.querySelector('#removeMedia').onclick = () => { data.tweets[n-1].media = null; render(); };
+  tools.querySelector('#removePost').disabled = n <= 1;
+  tools.querySelector('#removePost').onclick = () => { data.tweets.pop(); render(); };
+  fit();
+  saveDraft();
+}
+
+/* ============================================================
+   预览缩放
+   ============================================================ */
+const scaler = document.getElementById('scaler');
+function fit() {
+  const avail = Math.min(window.innerWidth - 12, 418);
+  const w = 402;
+  const s = Math.min(1, avail / w);
+  scaler.style.width = w + 'px';
+  scaler.style.transform = `scale(${s})`;
+  scaler.style.height = (card.offsetHeight * s) + 'px';
+}
+
+/* ============================================================
+   编辑
+   ============================================================ */
+function setField(path, val) {
+  const [a, b] = path.split('.');
+  if (b) data.tweets[+a][b] = val;
+  else data[a] = val;
+}
+
+card.addEventListener('input', e => {
+  const el = e.target.closest('[contenteditable]');
+  if (!el) return;
+  const f = el.dataset.f || '';
+
+  if (/\.(replies|retweets|likes|views)$/.test(f)) {
+    // 允许数字 + 千分位逗号 + 万/亿 单位，其余字符剔掉
+    const raw = el.textContent.replace(/[^\d.,万亿]/g, '');
+    if (raw !== el.textContent) {
+      el.textContent = raw;
+      const r = document.createRange();
+      r.selectNodeContents(el); r.collapse(false);
+      const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    }
+    setField(f, raw);
+    el.classList.toggle('sm', raw.length >= 5 && raw.length < 7);
+    el.classList.toggle('xs', raw.length >= 7);
+    stats.mode = 'manual'; syncStats(); saveDraft();
+    // 空值不隐藏节点（否则焦点丢失、无法继续输入），导出时再物理删除空数字
+    return;
+  }
+
+  // 正文输入交给浏览器原生处理，不重写 DOM（重写会打断光标和连续回车）
+  if (/\.text$/.test(f)) setField(f, readMultiline(el));
+  else setField(f, el.textContent);
+  if (f === 'handle') card.querySelectorAll('.hk').forEach(other => { if (other !== el) other.textContent = data.handle; });
+  saveDraft();
+  fit();
+});
+card.addEventListener('focusout', e => {
+  const el = e.target.closest('[data-f]');
+  if (!el || !/\.time$/.test(el.dataset.f) || stats.mode !== 'auto') return;
+  const i = Number(el.dataset.f.split('.')[0]);
+  if (applyStats(data.tweets[i])) {
+    card.querySelectorAll('.ac')[i].outerHTML = actHTML(data.tweets[i], i);
+    syncStats(); saveDraft();
+  } else syncStats('时间无法识别或为未来日期，保留原数据；请输入「2分钟」「3小时」或有效日期');
+});
+
+/* 把 contenteditable 的 DOM 读成带 \n 的纯文本
+   innerText 是浏览器自己算的"视觉文本"，天然把 <div>/<br> 转成 \n，
+   比自己遍历 DOM 更可靠（尤其是 execCommand 插入后的复杂结构） */
+function readMultiline(el) {
+  let txt;
+
+  // 优先用 innerText（它尊重 line-height 与块级换行）
+  if (typeof el.innerText === 'string' && el.innerText !== '') {
+    txt = el.innerText;
+  } else {
+    txt = el.textContent;
+  }
+
+  txt = txt.replace(/\u00a0/g, ' ')
+           .replace(/\r\n?/g, '\n')
+           .replace(/\n{3,}/g, '\n\n')
+           .replace(/\n+$/, '');
+
+  return txt;
+}
+
+/* 在离屏 canvas 上把图片裁成圆形，返回 dataURL。
+   为什么必须这样：foreignObject 里 border-radius + overflow:hidden 的裁剪
+   在部分内核上不生效，头像会溢出圆形。用 canvas 预先裁好最稳。 */
+function circleImage(src, sizePx, dpr) {
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      const s = sizePx * dpr;
+      const c = document.createElement('canvas');
+      c.width = s; c.height = s;
+      const x = c.getContext('2d');
+      x.save();
+      x.beginPath();
+      x.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+      x.closePath();
+      x.clip();
+
+      // object-fit: cover
+      const k = Math.max(s / im.naturalWidth, s / im.naturalHeight);
+      const dw = im.naturalWidth * k, dh = im.naturalHeight * k;
+      x.drawImage(im, (s - dw) / 2, (s - dh) / 2, dw, dh);
+      x.restore();
+
+      // 描边（模拟 1px 边框）
+      x.beginPath();
+      x.arc(s / 2, s / 2, s / 2 - 0.5 * dpr, 0, Math.PI * 2);
+      x.strokeStyle = '#eff3f4';
+      x.lineWidth = dpr;
+      x.stroke();
+
+      resolve(c.toDataURL('image/png'));
+    };
+    im.onerror = () => resolve(null);
+    im.src = src;
+  });
+}
+
+function escapeToHTML(txt) {
+  return String(txt)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+}
+
+function getCaretOffset(el) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount) return 0;
+  const r = sel.getRangeAt(0).cloneRange();
+  r.selectNodeContents(el);
+  r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
+  return r.toString().length;
+}
+
+function setCaretOffset(el, offset) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let acc = 0, node;
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === 3) {
+      const len = node.nodeValue.length;
+      if (acc + len >= offset) {
+        const r = document.createRange();
+        r.setStart(node, Math.max(0, offset - acc));
+        r.collapse(true);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+        return;
+      }
+      acc += len;
+    } else if (node.nodeName === 'BR') {
+      if (acc >= offset) {
+        const r = document.createRange();
+        r.setStartBefore(node); r.collapse(true);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+        return;
+      }
+      acc += 1;
+    }
+  }
+  // 兜底放末尾
+  const r = document.createRange();
+  r.selectNodeContents(el); r.collapse(false);
+  const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+}
+
+/* 回车：只拦名字/handle/时间/数字（回车结束编辑），正文交给浏览器原生 */
+card.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const el = e.target.closest('[contenteditable]');
+  if (!el) return;
+  if (!/\.text$/.test(el.dataset.f || '')) {
+    e.preventDefault();
+    el.blur();
+  }
+  // 正文：不干预，浏览器会插入 <div> 或 <br>，导出时统一拍平
+});
+
+card.addEventListener('paste', e => {
+  const el = e.target.closest('[contenteditable]');
+  if (!el) return;
+  e.preventDefault();
+  const txt = (e.clipboardData || window.clipboardData).getData('text/plain');
+  document.execCommand('insertText', false, txt);
+});
+
+/* ============================================================
+   头像 / 配图
+   ============================================================ */
+const fAv = document.getElementById('fAv'), fMd = document.getElementById('fMd');
+document.getElementById('btnAv').onclick = () => fAv.click();
+document.getElementById('btnMd').onclick = () => fMd.click();
+
+fAv.onchange = () => {
+  const f = fAv.files && fAv.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { data.avatar = rd.result; render(); toast('头像已更新'); };
+  rd.readAsDataURL(f); fAv.value = '';
+};
+
+fMd.onchange = () => {
+  const f = fMd.files && fMd.files[0]; if (!f) return;
+  const idx = data.tweets.length - 1;
+  const rd = new FileReader();
+  rd.onload = () => { data.tweets[idx].media = rd.result; render(); toast('配图已添加'); };
+  rd.readAsDataURL(f); fMd.value = '';
+};
+
+/* 蓝标开关 */
+const btnVf = document.getElementById('btnVf');
+function syncVf() {
+  btnVf.setAttribute('aria-pressed', String(data.verified));
+  btnVf.style.background = data.verified ? '#1d9bf0' : '#eaeef2';
+  btnVf.style.color = data.verified ? '#fff' : '#93a1af';
+}
+btnVf.onclick = () => {
+  data.verified = !data.verified;
+  document.querySelectorAll('.vf').forEach(s => s.classList.toggle('on', data.verified));
+  syncVf();
+  saveDraft();
+  toast(data.verified ? '已开启蓝标' : '已关闭蓝标');
+};
+syncVf();
+
+/* ============================================================
+   加一条 / 重置
+   ============================================================ */
+document.getElementById('btnAdd').onclick = () => {
+  if (data.tweets.length >= 4) return toast('最多 4 条');
+  data.tweets.push({
+    name: data.tweets[0].name || '', time: '· 2分钟', corner: 'none',
+    text: '新的推文…', replies: '', retweets: '', likes: '', views: '', media: null,
+  });
+  if (stats.mode === 'auto') applyStats(data.tweets[data.tweets.length-1]);
+  render(); toast('已添加一条');
+};
+
+document.getElementById('btnReset').onclick = () => {
+  if (!confirm('恢复参考样式？当前编辑会丢失')) return;
+  data = JSON.parse(JSON.stringify(DEF));
+  stats = {mode:'manual', heat:'medium'};
+  syncStats(); syncVf();
+  render(); toast('已重置');
+};
+
+/* ============================================================
+   导出：DOM → foreignObject(SVG) → Canvas
+   用浏览器原生排版，导出与预览逐像素一致
+   ============================================================ */
+const CSS = document.querySelector('style').textContent;
+
+/* 从实时 DOM 读取真实计算样式，内联到克隆体上。
+   为什么：foreignObject 里 CSS 规则的可靠性不稳定（尤其 border-radius/overflow/绝对定位），
+   把关键属性写成 inline style 才能确保 100% 还原预览。 */
+const INLINE_PROPS = [
+  'position','left','top',
+  // 注意：绝对定位元素不能同时写 right/bottom + width/height，否则宽高会被拉伸、圆角失效
+  'width','height',
+  'min-width','max-width',
+  'display','flex-direction','flex-wrap','flex-grow','flex-shrink','flex-basis',
+  'align-items','align-self','justify-content',
+  'margin','margin-top','margin-right','margin-bottom','margin-left',
+  'padding','padding-top','padding-right','padding-bottom','padding-left',
+  'font-family','font-size','font-weight','line-height','letter-spacing','text-align',
+  'color','background','background-color','background-image',
+  'border','border-width','border-style','border-color','border-radius',
+  'border-top','border-bottom','border-left','border-right',
+  'overflow','overflow-x','overflow-y','object-fit','object-position',
+  'white-space','word-break','overflow-wrap','text-overflow','text-rendering',
+  'font-variant-numeric','box-sizing','opacity','z-index','transform','vertical-align',
+  'list-style','text-decoration','-webkit-text-size-adjust',
+];
+
+/* 把「已挂载、已完成布局」的元素的计算样式写成内联 style。
+   必须在元素真正处于文档流中（有布局）之后调用，否则 getComputedStyle 拿到的是空值/继承值。 */
+function bakeStyles(root) {
+  const all = [root, ...root.querySelectorAll('*')];
+  for (const el of all) {
+    if (el.tagName === 'STYLE' || el.tagName === 'SCRIPT') continue;
+    const cs = window.getComputedStyle(el);
+    let css = '';
+    for (const p of INLINE_PROPS) {
+      let v = cs.getPropertyValue(p);
+      if (!v || v === 'auto') continue;
+      // 跳过默认无用值，减小体积
+      if (v === 'normal' || v === 'none' || v === 'static' || v === 'rgba(0, 0, 0, 0)') continue;
+      if ((p === 'margin' || p === 'padding') && v === '0px') continue;
+      if ((p === 'background-image') && v === 'none') continue;
+      if (p === 'transform' && v === 'none') continue;
+      css += `${p}:${v};`;
+    }
+    el.setAttribute('style', css);
+  }
+}
+
+async function exportPNG(scale) {
+  if (document.fonts) await document.fonts.ready;
+  const w = 402;
+
+  /* 离屏同宽容器：保证克隆体有真实布局 */
+  const holder = document.createElement('div');
+  holder.setAttribute('style',
+    `position:fixed;left:-99999px;top:0;width:${w}px;background:#fff;` +
+    `font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Helvetica Neue",Arial,sans-serif;`);
+
+  const clone = card.cloneNode(true);
+  clone.querySelectorAll('[contenteditable]').forEach(el => {
+    el.removeAttribute('contenteditable');
+    el.removeAttribute('spellcheck');
+  });
+
+  /* 空数字直接「物理删除」，不靠 .hide 类的 display:none。
+     原因：bakeStyles 会把当前 computed display 内联，若 .hide 规则在导出环境里没匹配上，
+     空数字就会留一个 margin-left 空隙；反过来若匹配了，又会把非空数字一起隐藏。
+     直接删掉节点，语义最干净。 */
+  clone.querySelectorAll('.cn').forEach(el => {
+    if (el.textContent.trim() === '') el.remove();
+  });
+
+  clone.querySelectorAll('.vf:not(.on)').forEach(el => el.remove());
+  clone.querySelectorAll('.thread.off').forEach(el => el.remove());
+
+  /* 正文拍平成 <br> 结构（避免块级 div 撑行高） */
+  clone.querySelectorAll('.tx').forEach((el, i) => {
+    const src = data.tweets[i];
+    el.innerHTML = escapeToHTML(src ? src.text : readMultiline(el));
+  });
+
+  /* 图标：内联 <svg> → <img data:image/svg+xml>
+     颜色必须「显式」指定，不能依赖 getComputedStyle 的 fill（蓝标曾因此变灰）。
+     尺寸改为从 getBoundingClientRect 取（见下方 mount 之后），这里先只换成 <img> 占位。 */
+  const ICON_COLOR = {
+    vf:       '#1D9BF0',   // 蓝标
+    xlogo:    '#0F1419',   // 右上 X
+    blocked:  '#0F1419',   // 隐藏图标
+    more:     '#536471',   // 更多
+    default:  '#536471',   // 互动栏图标
+  };
+
+  function iconFillOf(svv, pathEl) {
+    let fill = pathEl.getAttribute('fill');
+    if (fill) return fill;
+    const cls = (svv.getAttribute('class') || '') + ' ' + (pathEl.getAttribute('class') || '');
+    if (/\bvf\b/.test(cls)) return ICON_COLOR.vf;
+    if (/\bxlogo\b/.test(cls)) return ICON_COLOR.xlogo;
+    if (/\bblocked\b/.test(cls)) return ICON_COLOR.blocked;
+    if (/\bmore\b/.test(cls)) return ICON_COLOR.more;
+    return ICON_COLOR.default;
+  }
+
+  /* 头像：换成 Canvas 预裁好的圆形图，彻底避免 border-radius 失效 */
+  if (data.avatar) {
+    const circleURI = await circleImage(data.avatar, 47.33, 3);
+    if (circleURI) {
+      clone.querySelectorAll('.av').forEach(av => {
+        av.innerHTML = `<img src="${circleURI}" style="width:100%;height:100%;display:block">`;
+        av.setAttribute('style',
+          'position:absolute;left:9px;top:12.67px;width:47.33px;height:47.33px;' +
+          'border-radius:50%;overflow:hidden;background:#fff;border:1px solid #eff3f4;');
+      });
+    }
+  } else {
+    // 占位头像：直接画成图片，不依赖伪元素
+    const phURI = await placeholderAvatar(47.33, 3);
+    clone.querySelectorAll('.av.ph').forEach(av => {
+      av.innerHTML = `<img src="${phURI}" style="width:100%;height:100%;display:block">`;
+      av.setAttribute('style',
+        'position:absolute;left:9px;top:12.67px;width:47.33px;height:47.33px;' +
+        'border-radius:50%;overflow:hidden;background:#fff;border:1px solid #eff3f4;');
+    });
+  }
+
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+  try {
+  await Promise.all(Array.from(clone.querySelectorAll('img'), im => im.decode()));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  /* 现在克隆体已完成布局，按真实尺寸把 <svg> 换成 <img>。
+     尺寸用 getBoundingClientRect()，这是唯一可靠的来源：
+     CSS 类里定义的宽高，用 style.width 读不到。 */
+  clone.querySelectorAll('svg').forEach(svv => {
+    const vb = svv.getAttribute('viewBox') || '0 0 24 24';
+    const pathEl = svv.querySelector('path');
+    const d = pathEl ? pathEl.getAttribute('d') : '';
+    if (!d) { svv.remove(); return; }
+
+    const fill = iconFillOf(svv, pathEl);
+    const rect = svv.getBoundingClientRect();
+    const px = rect.width || 18.75;
+    const py = rect.height || px;
+
+    const inner = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" width="${px}" height="${py}"><path d="${d}" fill="${fill}"/></svg>`;
+
+    const img = document.createElement('img');
+    img.setAttribute('src', 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(inner));
+    img.style.cssText = `width:${px}px;height:${py}px;display:block;flex:0 0 auto`;
+    svv.parentNode.replaceChild(img, svv);
+  });
+
+  const h = clone.offsetHeight || clone.scrollHeight;
+
+  /* 关键：克隆体已挂载并完成布局，把它自身每个节点的计算样式固化成 inline style。
+     这样导出的 SVG 不再依赖 <style> 规则解析，避免 border-radius/overflow/绝对定位失效。 */
+  bakeStyles(clone);
+
+  const rawCSS = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+  const scoped = rawCSS
+    .split('}')
+    .map(chunk => {
+      const i = chunk.indexOf('{');
+      if (i < 0) return null;
+      const sel = chunk.slice(0, i).trim();
+      const body = chunk.slice(i);
+      if (!sel || sel.charAt(0) === '@') return null;
+      return sel.split(',').map(x => x.trim()).filter(Boolean)
+        .map(x => '.xcard ' + x).join(',') + body;
+    })
+    .filter(Boolean).join('}');
+
+  const html = new XMLSerializer().serializeToString(clone);
+
+  const svgStr =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w * scale)}" height="${Math.round(h * scale)}" viewBox="0 0 ${w} ${h}">` +
+    `<foreignObject x="0" y="0" width="${w}" height="${h}">` +
+    `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${w}px">` +
+    `<style>${scoped}</style>${html}` +
+    `</div></foreignObject></svg>`;
+
+  holder.remove();
+
+  const img = new Image();
+  await new Promise((res, rej) => {
+    img.onload = res;
+    img.onerror = () => rej(new Error('render failed'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgStr);
+  });
+  await img.decode().catch(() => {});
+
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(w * scale);
+  cv.height = Math.round(h * scale);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, 0, 0, cv.width, cv.height);
+  return cv;
+  } finally { holder.remove(); }
+}
+
+/* 占位头像（灰人形）也用 canvas 画，避免伪元素在 foreignObject 里失效 */
+function placeholderAvatar(sizePx, dpr) {
+  return new Promise(resolve => {
+    const s = sizePx * dpr;
+    const c = document.createElement('canvas');
+    c.width = s; c.height = s;
+    const x = c.getContext('2d');
+
+    // 圆形裁剪
+    x.save();
+    x.beginPath();
+    x.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2);
+    x.closePath();
+    x.clip();
+    x.fillStyle = '#f7f9fa';
+    x.fillRect(0, 0, s, s);
+
+    // 头
+    x.fillStyle = '#cfd9de';
+    x.beginPath();
+    x.arc(s / 2, s * 0.29 + s * 0.145, s * 0.18, 0, Math.PI * 2);
+    x.fill();
+    // 肩
+    x.beginPath();
+    x.ellipse(s / 2, s * 0.58 + s * 0.21, s * 0.33, s * 0.22, 0, Math.PI, 0);
+    x.fill();
+    x.restore();
+
+    // 边框
+    x.beginPath();
+    x.arc(s / 2, s / 2, s / 2 - dpr / 2, 0, Math.PI * 2);
+    x.strokeStyle = '#eff3f4';
+    x.lineWidth = dpr;
+    x.stroke();
+
+    resolve(c.toDataURL('image/png'));
+  });
+}
+
+const sheet = document.getElementById('sheet');
+const outImg = document.getElementById('out');
+let outBlob = null, outURL = '', revokeURL = null;
+
+document.getElementById('btnOut').onclick = async () => {
+  const button = document.getElementById('btnOut');
+  if (button.disabled) return;
+  button.disabled = true;
+  try {
+    const cv = await exportPNG(3);
+
+    // 用 Blob + objectURL，比 data URI 更省内存、也是长按保存所要求的形式
+    outBlob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    if (!outBlob) throw new Error('PNG encoding failed');
+    if (revokeURL) URL.revokeObjectURL(revokeURL);
+    outURL = URL.createObjectURL(outBlob);
+    revokeURL = outURL;
+
+    outImg.src = outURL;
+    const mob = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    document.getElementById('outTip').textContent = mob
+      ? '长按上方图片，选择「保存到相册」'
+      : '点击下方保存，或右键图片另存为';
+    document.getElementById('btnNewTab').style.display = mob ? 'flex' : 'none';
+    sheet.classList.add('on');
+    document.getElementById('sheetX').focus();
+  } catch (err) {
+    console.error(err);
+    toast('生成失败，请重试');
+  } finally { button.disabled = false; }
+};
+
+/* 新标签打开图片：用一个空白页写入 <img>，
+   这样在 iOS/Android 上长按图片一定能弹出「存储图像」菜单
+   （直接打开 blob: 链接有时只显示图片、没有长按菜单） */
+document.getElementById('btnNewTab').onclick = () => {
+  if (!outURL) return;
+  const w = window.open('', '_blank');
+  if (!w) { toast('请允许弹出窗口'); return; }
+  w.document.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<title>长按图片保存</title>' +
+    '<style>body{margin:0;background:#f5f6f8;font-family:-apple-system,"PingFang SC",sans-serif}' +
+    '.h{padding:14px 16px;font-size:14px;color:#536471;text-align:center;line-height:1.5}' +
+    '.b{padding:0 12px 24px}img{width:100%;display:block;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.1)}' +
+    '</style></head><body>' +
+    '<div class="h">长按下方图片 → 选择「存储图像 / 保存图片」</div>' +
+    '<div class="b"><img src="' + outURL + '" alt=""></div>' +
+    '</body></html>'
+  );
+  w.document.close();
+};
+
+function closeSheet() { sheet.classList.remove('on'); document.getElementById('btnOut').focus(); }
+document.getElementById('sheetX').onclick = closeSheet;
+sheet.onclick = e => { if (e.target === sheet) closeSheet(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.classList.contains('on')) closeSheet(); });
+
+document.getElementById('btnDl').onclick = () => {
+  if (!outBlob) return;
+  const d = new Date(), p = x => String(x).padStart(2, '0');
+  const name = `x-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.png`;
+
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  if (isIOS) {
+    // iOS Safari 不支持 <a download>，改用「打开图片页 → 长按保存」
+    document.getElementById('btnNewTab').click();
+    return;
+  }
+
+  const a = document.createElement('a');
+  a.download = name;
+  a.href = outURL;
+  document.body.appendChild(a); a.click(); a.remove();
+  toast('已发起下载，请查看浏览器下载目录');
+};
+
+/* ============================================================
+   杂项
+   ============================================================ */
+let tid;
+function toast(m) {
+  const t = document.getElementById('toast');
+  t.textContent = m; t.classList.add('on');
+  clearTimeout(tid); tid = setTimeout(() => t.classList.remove('on'), 1600);
+}
+
+window.addEventListener('resize', fit);
+document.addEventListener('focusin', e => {
+  if (e.target.closest('[contenteditable]')) document.body.classList.add('editing');
+});
+document.addEventListener('focusout', e => {
+  if (e.target.closest('[contenteditable]')) document.body.classList.remove('editing');
+});
+
+render();
+syncStats();
+syncVf();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+
+/* 暴露给自动化校验 */
+window.__card = card;
+window.__export = exportPNG;
+</script>
+</body>
+</html>
