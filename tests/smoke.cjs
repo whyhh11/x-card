@@ -2,19 +2,29 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
-const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const engine = require(process.env.PLAYWRIGHT_MODULE || 'playwright')[process.env.BROWSER_ENGINE || 'chromium'];
 
 (async () => {
   const html = fs.readFileSync(path.join(__dirname, '../index.html'));
   const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(html); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({headless:true, ...(process.env.CHROME_PATH ? {executablePath:process.env.CHROME_PATH} : {})});
+  const browser = await engine.launch({headless:true, ...(process.env.CHROME_PATH ? {executablePath:process.env.CHROME_PATH} : {})});
   try {
-    const page = await browser.newPage({viewport:{width:390,height:844}, deviceScaleFactor:1});
+    const page = await browser.newPage({viewport:{width:390,height:844}, deviceScaleFactor:3, isMobile:true, hasTouch:true});
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto(`http://127.0.0.1:${server.address().port}`);
     assert.equal(await page.locator('.tw').count(), 2);
+    assert.match(await page.locator('.av img').first().getAttribute('src'),/^data:image\/jpeg;base64,/);
+    const beforeRandom = await page.locator('.tm').allTextContents();
+    await page.locator('#btnRandom').click();
+    assert.notDeepEqual(await page.locator('.tm').allTextContents(),beforeRandom);
+    const ages = await page.evaluate(() => data.tweets.map(t => ageMinutes(t.time)));
+    assert.ok(ages.every((n,i) => n > 0 && (!i || n <= ages[i-1])));
+    const times = await page.locator('.tm').allTextContents();
+    await page.locator('#statsHeat').selectOption('low');
+    assert.deepEqual(await page.locator('.tm').allTextContents(),times);
+    await page.locator('#statsHeat').selectOption('medium');
     const checks = await page.evaluate(() => {
       const now = new Date(2026,10,9,12);
       const parsed = ['刚刚','30秒','2分钟','3小时前','2天','1周','2h','5 minutes ago','2026-11-08','2026-02-30','2099-01-01','abc'].map(s => ageMinutes(s,now));
@@ -61,6 +71,20 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     await page.locator('#sheet.on').waitFor();
     const image = await page.locator('#out').evaluate(async im => {await im.decode(); return {w:im.naturalWidth,h:im.naturalHeight};});
     assert.equal(image.w,1206); assert.ok(image.h > 500);
+    // Content must span the canvas rather than shrinking into its top-left third.
+    const bounds = await page.locator('#out').evaluate(im => {
+      const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;
+      const ctx=c.getContext('2d');ctx.drawImage(im,0,0);
+      const p=ctx.getImageData(0,0,c.width,c.height).data;
+      let right=0,bottom=0;
+      for(let y=0;y<c.height;y++) for(let x=0;x<c.width;x++) {
+        const i=(y*c.width+x)*4;
+        if(p[i]<180||p[i+1]<180||p[i+2]<180){right=Math.max(right,x);bottom=Math.max(bottom,y);}
+      }
+      return {right,bottom,width:c.width,height:c.height};
+    });
+    assert.ok(bounds.right > bounds.width*.85,JSON.stringify(bounds));
+    assert.ok(bounds.bottom > bounds.height*.85,JSON.stringify(bounds));
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#sheet.on').count(),0);
     for (const width of [320,390,768,1440]) {
